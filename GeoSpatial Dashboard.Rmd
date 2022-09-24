@@ -1,0 +1,124 @@
+---
+title: "Geospatial data dashboard"
+output: html_notebook
+---
+
+Load packages.
+
+```{r}
+is.installed <- function(paquete) is.element(paquete, installed.packages())
+
+if(!is.installed('rgdal'))
+
+  install.packages('rgdal')
+
+library(rgdal)
+
+if(!is.installed('tmap'))
+
+  install.packages('tmap')
+
+library(tmap)
+```
+
+Load CSV data
+
+```{r}
+customers <- read.csv2("data/LondonCustomer.csv")
+str(customers)
+```
+
+Add total product consumption and store it into a variable
+```{r}
+customers$SUM = customers$NETPRICE_PRO11_AMT + customers$NETPRICE_PRO12_AMT + customers$NETPRICE_PRO13_AMT + customers$NETPRICE_PRO14_AMT + customers$NETPRICE_PRO15_AMT + customers$NETPRICE_PRO16_AMT + customers$NETPRICE_PRO17_AMT
+
+customers$LT_55 = customers$AGE < 55;
+str(customers)
+customers
+```
+
+
+Select customers that are less than 55 years old and group them by office
+
+```{r}
+customer_data = customers[customers$LT_55 == TRUE, ]
+customer_data = customer_data[order(customer_data$SUM),]
+customer_data
+```  
+
+Select branches with lowest grades and group them by region
+
+```{r}
+if(!is.installed('dplyr'))
+
+  install.packages('dplyr')
+library("dplyr")
+
+customer_data_lowest <- customer_data %>% 
+  count(name, SUM, sort = TRUE) %>%
+  filter(SUM == 1)
+
+customer_data_lowest <- customer_data_lowest[c(1,3)]
+colnames(customer_data_lowest) <- c("name","TotalLowestVolume")
+customer_data_lowest
+
+
+
+```
+Average the total grade per  name
+```{r}
+customer_data_avg <- customer_data %>% 
+  group_by(name) %>% 
+  summarise(average_sum = mean(SUM))
+customer_data_avg
+```
+
+Load geo spatial data
+
+```{r}
+i_data_gs <- readOGR(dsn = "data", layer = "london_sport")
+
+i_data_gs$Pop_2001 <- as.numeric(as.character(i_data_gs$Pop_2001))
+```
+
+Join geospatial data by region name
+```{r}
+customer_ag_data <- merge(i_data_gs@data,customer_data_lowest,by="name",all.x=T)
+customer_ag_data <- merge(customer_ag_data,customer_data_avg,by="name",all.x=T)
+customer_ag_data
+```
+
+
+Data cleanup
+
+```{r}
+customer_ag_data$TotalLowestVolume[is.na(customer_ag_data$TotalLowestVolume)] <- 0
+customer_ag_data
+str(customer_ag_data)
+```
+Create a new data frame with geospatial data and customer data
+
+```{r}
+customer_ag_data_gs<-merge(i_data_gs, customer_ag_data[,c(1,5:6)], by = "name", all.x=TRUE)
+customer_ag_data_gs
+```
+
+Display customer with lower value per region (using <55 year old filter)
+
+```{r}
+qtm(customer_ag_data_gs, "TotalLowestVolume",  text="name", text.size="AREA",text.root=4, fill.title="Customer value", style="gray") +
+tm_legend(legend.position = c("left", "top"),
+          main.title = "Lowest customer(s) per region",
+          main.title.position = "right")
+```
+ 
+
+Display grade per region
+```{r}
+qtm(customer_ag_data_gs, "average_sum", text="name", text.size="AREA",text.root=3, fill.title="Average grade", style="gray") +
+tm_legend(legend.position = c("left", "top"),
+          main.title = "Average sum per region",
+          main.title.position = "right")
+
+```
+
